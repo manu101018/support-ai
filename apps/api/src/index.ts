@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { pool } from "./db";
 import { redisClient } from "./redis";
+import { generateReply } from "./llm/geminiClient";
 
 const app = express();
 app.use(express.json());
@@ -10,8 +11,25 @@ app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
 });
 
-app.post("/chat", (_req, res) => {
-    res.json({ message: "I am your AI support assistant." });
+app.post("/chat", async (req, res) => {
+    const { message } = req.body;
+
+    if (!message || typeof message != 'string') {
+        return res.status(400).json({ error: "Field 'message' (string) is required." });
+    }
+
+    try {
+        const reply = await Promise.race([
+            generateReply(message),
+            new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error("LLM Call Timed Out. Please try again.")), 20000);
+            })
+        ])
+        res.status(200).json({ message: reply });
+    } catch (err) {
+        console.error("LLM call failed:", err);
+        res.status(502).json({ error: "AI service unavailable, please try again." });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
