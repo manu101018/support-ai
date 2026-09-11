@@ -2,7 +2,9 @@ import "dotenv/config";
 import express from "express";
 import { pool } from "./db";
 import { redisClient } from "./redis";
-import { generateReply } from "./llm/geminiClient";
+import { createLLMProvider } from "./llm/llmFactory";
+
+const llmProvider = createLLMProvider();
 
 const app = express();
 app.use(express.json());
@@ -20,7 +22,7 @@ app.post("/chat", async (req, res) => {
 
     try {
         const reply = await Promise.race([
-            generateReply(message),
+            llmProvider.generateReply(message),
             new Promise<never>((_, reject) => {
                 setTimeout(() => reject(new Error("LLM Call Timed Out. Please try again.")), 20000);
             })
