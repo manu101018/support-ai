@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express from "express";
-import { pool } from "./db";
+import { pool } from "./db/pool";
 import { redisClient } from "./redis";
 import { createLLMProvider } from "./llm/llmFactory";
 
