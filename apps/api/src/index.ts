@@ -24,7 +24,7 @@ app.post("/chat", async (req, res) => {
         const reply = await Promise.race([
             llmProvider.chatWithTools(message),
             new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error("LLM Call Timed Out. Please try again.")), 20000);
+                setTimeout(() => reject(new Error("LLM Call Timed Out. Please try again.")), 60000);
             })
         ])
         res.status(200).json({ message: reply });
