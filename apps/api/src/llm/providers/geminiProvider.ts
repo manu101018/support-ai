@@ -36,7 +36,7 @@ export class GeminiProvider implements LLMProvider {
             contents: userMessage,
             config: {
                 systemInstruction: `${SUPPORT_AI_SYSTEM_PROMPT}\n\nClassify the user's message and respond ONLY in the given JSON schema. The "response" field should be a short, professional reply consistent with the rules above.`,
-                temperature: 0.2,
+                temperature: 0.3,
                 responseMimeType: "application/json",
                 responseSchema: geminiIntentResponseSchema,
             },
