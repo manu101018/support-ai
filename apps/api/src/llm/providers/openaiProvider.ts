@@ -11,4 +11,8 @@ export class OpenAIProvider implements LLMProvider {
     async classifyIntent(_userMessage: string): Promise<IntentResult> {
         throw new Error("OpenAIProvider not implemented yet.");
     }
+
+    async chatWithTools(_userMessage: string): Promise<string> {
+        throw new Error("OpenAIProvider not implemented yet.");
+    }
 }

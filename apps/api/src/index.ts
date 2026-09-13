@@ -22,7 +22,7 @@ app.post("/chat", async (req, res) => {
 
     try {
         const reply = await Promise.race([
-            llmProvider.classifyIntent(message),
+            llmProvider.chatWithTools(message),
             new Promise<never>((_, reject) => {
                 setTimeout(() => reject(new Error("LLM Call Timed Out. Please try again.")), 20000);
             })
