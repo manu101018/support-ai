@@ -1,4 +1,4 @@
-export type ToolErrorCode = "INVALID_ARGUMENTS" | "NOT_FOUND" | "EXECUTION_ERROR";
+export type ToolErrorCode = "INVALID_ARGUMENTS" | "NOT_FOUND" | "EXECUTION_ERROR" | "UNAUTHORIZED_ARGUMENT";
 
 export interface ToolError {
     error: true;

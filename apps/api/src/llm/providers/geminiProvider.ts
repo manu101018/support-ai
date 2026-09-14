@@ -4,6 +4,8 @@ import { SUPPORT_AI_SYSTEM_PROMPT } from "../prompts";
 import { IntentResult, IntentResultSchema, geminiIntentResponseSchema } from "../schemas/intentSchema";
 import { allToolDeclarations, toolRegistry } from "../../tools/registry";
 import { withRetry } from "../retry";
+import { createConversationContext, addTrustedValue, authorizeToolArgs } from "../../tools/authorization";
+import { toolError } from "../../tools/toolError";
 
 export class GeminiProvider implements LLMProvider {
     name = "gemini";
@@ -59,6 +61,8 @@ export class GeminiProvider implements LLMProvider {
             { role: "user", parts: [{ text: userMessage }] },
         ];
 
+        const context = createConversationContext(userMessage);
+
         const MAX_TOOL_ROUNDS = process.env.MAX_TOOL_ROUNDS ? parseInt(process.env.MAX_TOOL_ROUNDS) : 3; // safety cap — never loop forever
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -86,16 +90,35 @@ export class GeminiProvider implements LLMProvider {
                 return `I tried to use a tool ("${functionCall.name}") that isn't available.`;
             }
 
-            console.log(`[round ${round}] tool call: ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
-            const toolResult = await tool.execute(functionCall.args);
-            console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
-
             // Preserve the model's ACTUAL content (thought_signature intact)
             const modelContent = response.candidates?.[0]?.content;
             if (!modelContent) {
                 throw new Error("Expected model content with function call, got none.");
             }
             contents.push(modelContent);
+
+            // --- AUTHORIZATION CHECK — before any execution ---
+
+            const authCheck = authorizeToolArgs(context, functionCall.args ?? {});
+            let toolResult: any;
+
+            if (!authCheck.authorized) {
+                console.warn(`[round ${round}] BLOCKED unauthorized args:`, functionCall.args, authCheck.reason);
+                toolResult = toolError("UNAUTHORIZED_ARGUMENT", authCheck.reason!);
+            } else {
+                console.log(`[round ${round}] tool call: ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
+                toolResult = await tool.execute(functionCall.args);
+                console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
+
+                // Legitimate identity resolution — trust the derived value going forward
+                if (functionCall.name === "getCustomerByEmail" && toolResult?.id) {
+                    addTrustedValue(context, toolResult.id);
+                }
+            }
+
+
+            console.log(`[round ${round}] tool call: ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
+            console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
 
             contents.push({
                 role: "user",
