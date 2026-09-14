@@ -1,5 +1,7 @@
 import { Type, FunctionDeclaration } from "@google/genai";
 import { getCustomerByEmail } from "../db/queries";
+import { GetCustomerArgsSchema } from "./schemas";
+import { toolError } from "./toolError";
 
 // What the MODEL sees — name, description, and expected arguments
 export const getCustomerToolDeclaration: FunctionDeclaration = {
@@ -19,16 +21,20 @@ export const getCustomerToolDeclaration: FunctionDeclaration = {
 }
 
 // What YOUR CODE actually runs when the model requests this tool
-export async function executeGetCustomerTool(args: { email: string }) {
-    if (typeof args.email !== "string" || !args.email.includes("@")) {
-        return { error: "Invalid email provided." };
+export async function executeGetCustomerTool(args: unknown) {
+    const parsed = GetCustomerArgsSchema.safeParse(args);
+    if (!parsed.success) {
+        return toolError("INVALID_ARGUMENTS", `Invalid arguments for getCustomerByEmail: ${parsed.error.message}`);
     }
 
-    const customer = await getCustomerByEmail(args.email);
-
-    if (!customer) {
-        return { error: `No customer found with email ${args.email}.` };
+    try {
+        const customer = await getCustomerByEmail(parsed.data.email);
+        if (!customer) {
+            return toolError("NOT_FOUND", `No customer found with email ${parsed.data.email}.`);
+        }
+        return customer;
+    } catch (err) {
+        console.error("getCustomerByEmail execution error:", err);
+        return toolError("EXECUTION_ERROR", "Something went wrong looking up this customer. Please try again.");
     }
-
-    return customer;
 }

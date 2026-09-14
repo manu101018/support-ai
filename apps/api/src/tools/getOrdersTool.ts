@@ -1,5 +1,7 @@
 import { Type, FunctionDeclaration } from "@google/genai";
 import { getOrdersByUserId } from "../db/queries";
+import { GetOrdersArgsSchema } from "./schemas";
+import { toolError } from "./toolError";
 
 export const getOrdersToolDeclaration: FunctionDeclaration = {
     name: "getOrdersByUserId",
@@ -17,16 +19,20 @@ export const getOrdersToolDeclaration: FunctionDeclaration = {
     },
 };
 
-export async function executeGetOrdersTool(args: { userId: number }) {
-    if (typeof args.userId !== "number" || args.userId <= 0) {
-        return { error: "Invalid userId provided." };
+export async function executeGetOrdersTool(args: unknown) {
+    const parsed = GetOrdersArgsSchema.safeParse(args);
+    if (!parsed.success) {
+        return toolError("INVALID_ARGUMENTS", `Invalid arguments for getOrdersByUserId: ${parsed.error.message}`);
     }
 
-    const orders = await getOrdersByUserId(args.userId);
-
-    if (orders.length === 0) {
-        return { message: `No orders found for user ${args.userId}.`, orders: [] };
+    try {
+        const orders = await getOrdersByUserId(parsed.data.userId);
+        if (orders.length === 0) {
+            return { message: `No orders found for user ${parsed.data.userId}.`, orders: [] };
+        }
+        return { orders };
+    } catch (err) {
+        console.error("getOrdersByUserId execution error:", err);
+        return toolError("EXECUTION_ERROR", "Something went wrong looking up orders. Please try again.");
     }
-
-    return { orders };
 }
