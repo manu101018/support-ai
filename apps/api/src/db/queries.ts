@@ -23,3 +23,26 @@ export async function getPaymentByOrderId(orderId: number) {
     );
     return result.rows[0] ?? null;
 }
+
+export async function getCustomerByEmail(email: string) {
+    const result = await pool.query(
+        `SELECT id, name, email, phone, created_at
+        FROM users
+        WHERE email = $1`,
+        [email]
+    )
+
+    return result.rows[0] ?? null;
+}
+
+export async function getOrdersByUserId(userId: number) {
+    const result = await pool.query(
+        `SELECT id, status, payment_status, total_amount, created_at
+        FROM orders
+        WHERE user_id = $1
+        ORDER BY created_at DESC`,
+        [userId]
+    )
+
+    return result.rows;
+}

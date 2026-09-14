@@ -69,6 +69,8 @@ export class GeminiProvider implements LLMProvider {
             }
         })
 
+        console.log('[first]', JSON.stringify(first, null, 2));
+
         const functionCall = first.functionCalls?.[0];
 
         if (!functionCall) {
@@ -82,6 +84,7 @@ export class GeminiProvider implements LLMProvider {
 
         console.log(`[tool call] ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
         const toolResult = await tool.execute(functionCall.args);
+        console.log('[tool result]', JSON.stringify(toolResult, null, 2));
 
         // Use the model's ACTUAL returned content (preserves thought_signature) —
         // do not hand-construct this turn, or Gemini 3.x rejects it.
@@ -115,6 +118,7 @@ export class GeminiProvider implements LLMProvider {
             },
         });
 
+        console.log('[second]', JSON.stringify(second, null, 2));
         return second.text ?? "Sorry, I couldn't generate a response.";
     }
 }
