@@ -1,5 +1,6 @@
 import { FunctionDeclaration } from "@google/genai";
 import { getOrderToolDeclaration, executeGetOrderTool } from "./getOrderTool";
+import { getPaymentToolDeclaration, executeGetPaymentTool } from './getPaymentTool';
 
 export interface ToolDefinition {
     declaration: FunctionDeclaration;
@@ -10,6 +11,10 @@ export const toolRegistry: Record<string, ToolDefinition> = {
     getOrderById: {
         declaration: getOrderToolDeclaration,
         execute: executeGetOrderTool
+    },
+    getPaymentByOrderId: {
+        declaration: getPaymentToolDeclaration,
+        execute: executeGetPaymentTool
     }
 }
 

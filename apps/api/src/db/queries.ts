@@ -11,3 +11,15 @@ export async function getOrderById(orderId: number) {
     );
     return result.rows[0] ?? null;
 }
+
+export async function getPaymentByOrderId(orderId: number) {
+    const result = await pool.query(
+        `SELECT p.id, p.status, p.transaction_id, p.amount, p.created_at,
+            o.id AS order_id, o.status AS order_status
+     FROM payments p
+     JOIN orders o ON p.order_id = o.id
+     WHERE p.order_id = $1`,
+        [orderId]
+    );
+    return result.rows[0] ?? null;
+}
