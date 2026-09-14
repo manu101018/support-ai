@@ -56,69 +56,62 @@ export class GeminiProvider implements LLMProvider {
 
     async chatWithTools(userMessage: string): Promise<string> {
         const contents: any[] = [
-            { role: 'user', parts: [{ text: userMessage }] }
-        ]
+            { role: "user", parts: [{ text: userMessage }] },
+        ];
 
-        const first = await this.ai.models.generateContent({
-            model: this.model,
-            contents,
-            config: {
-                systemInstruction: SUPPORT_AI_SYSTEM_PROMPT,
-                temperature: 0.3,
-                tools: [{ functionDeclarations: allToolDeclarations }]
-            }
-        })
+        const MAX_TOOL_ROUNDS = process.env.MAX_TOOL_ROUNDS ? parseInt(process.env.MAX_TOOL_ROUNDS) : 3; // safety cap — never loop forever
 
-        console.log('[first]', JSON.stringify(first, null, 2));
-
-        const functionCall = first.functionCalls?.[0];
-
-        if (!functionCall) {
-            return first.text ?? "Sorry, I couldn't generate a response.";
-        }
-
-        const tool = toolRegistry[functionCall.name!];
-        if (!tool) {
-            return `I tried to use a tool ("${functionCall.name}") that isn't available.`;
-        }
-
-        console.log(`[tool call] ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
-        const toolResult = await tool.execute(functionCall.args);
-        console.log('[tool result]', JSON.stringify(toolResult, null, 2));
-
-        // Use the model's ACTUAL returned content (preserves thought_signature) —
-        // do not hand-construct this turn, or Gemini 3.x rejects it.
-
-        const modelContent = first.candidates?.[0]?.content;
-        if (!modelContent) {
-            throw new Error("Expected model content with function call, got none.");
-        }
-        contents.push(modelContent);
-
-        // Second call: send the tool's real result back so the model can respond using it
-        contents.push({
-            role: "user",
-            parts: [
-                {
-                    functionResponse: {
-                        name: functionCall.name!,
-                        response: { result: toolResult },
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            const response = await withRetry(() =>
+                this.ai.models.generateContent({
+                    model: this.model,
+                    contents,
+                    config: {
+                        systemInstruction: SUPPORT_AI_SYSTEM_PROMPT,
+                        temperature: 0.3,
+                        tools: [{ functionDeclarations: allToolDeclarations }],
                     },
-                },
-            ],
-        });
+                })
+            );
 
-        const second = await this.ai.models.generateContent({
-            model: this.model,
-            contents,
-            config: {
-                systemInstruction: SUPPORT_AI_SYSTEM_PROMPT,
-                temperature: 0.3,
-                tools: [{ functionDeclarations: allToolDeclarations }],
-            },
-        });
+            const functionCall = response.functionCalls?.[0];
 
-        console.log('[second]', JSON.stringify(second, null, 2));
-        return second.text ?? "Sorry, I couldn't generate a response.";
+            // No tool requested — model is done, return its answer
+            if (!functionCall) {
+                return response.text ?? "Sorry, I couldn't generate a response.";
+            }
+
+            const tool = toolRegistry[functionCall.name!];
+            if (!tool) {
+                return `I tried to use a tool ("${functionCall.name}") that isn't available.`;
+            }
+
+            console.log(`[round ${round}] tool call: ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
+            const toolResult = await tool.execute(functionCall.args);
+            console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
+
+            // Preserve the model's ACTUAL content (thought_signature intact)
+            const modelContent = response.candidates?.[0]?.content;
+            if (!modelContent) {
+                throw new Error("Expected model content with function call, got none.");
+            }
+            contents.push(modelContent);
+
+            contents.push({
+                role: "user",
+                parts: [
+                    {
+                        functionResponse: {
+                            name: functionCall.name!,
+                            response: { result: toolResult },
+                        },
+                    },
+                ],
+            });
+
+            // loop continues — model gets another turn, may call another tool or finally answer
+        }
+
+        return "I wasn't able to complete this request after several steps — could you rephrase or provide more details?";
     }
 }
