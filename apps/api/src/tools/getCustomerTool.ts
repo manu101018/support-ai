@@ -2,6 +2,7 @@ import { Type, FunctionDeclaration } from "@google/genai";
 import { getCustomerByEmail } from "../db/queries";
 import { GetCustomerArgsSchema } from "./schemas";
 import { toolError } from "./toolError";
+import { withToolRetry, withToolTimeout } from "./toolRetry";
 
 // What the MODEL sees — name, description, and expected arguments
 export const getCustomerToolDeclaration: FunctionDeclaration = {
@@ -28,12 +29,18 @@ export async function executeGetCustomerTool(args: unknown) {
     }
 
     try {
-        const customer = await getCustomerByEmail(parsed.data.email);
+        const customer = await withToolTimeout(() =>
+            withToolRetry(() => getCustomerByEmail(parsed.data.email))
+        );
         if (!customer) {
             return toolError("NOT_FOUND", `No customer found with email ${parsed.data.email}.`);
         }
         return customer;
-    } catch (err) {
+    } catch (err: any) {
+        if (err?.code === "TOOL_TIMEOUT") {
+            console.error("getCustomerByEmail timed out");
+            return toolError("EXECUTION_ERROR", "Looking up this customer is taking longer than expected. Please try again shortly.");
+        }
         console.error("getCustomerByEmail execution error:", err);
         return toolError("EXECUTION_ERROR", "Something went wrong looking up this customer. Please try again.");
     }

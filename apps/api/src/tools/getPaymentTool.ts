@@ -2,6 +2,7 @@ import { Type, FunctionDeclaration } from "@google/genai";
 import { getPaymentByOrderId } from "../db/queries";
 import { GetPaymentArgsSchema } from "./schemas";
 import { toolError } from "./toolError";
+import { withToolRetry, withToolTimeout } from "./toolRetry";
 
 // What the MODEL sees — name, description, and expected arguments
 export const getPaymentToolDeclaration: FunctionDeclaration = {
@@ -28,12 +29,18 @@ export async function executeGetPaymentTool(args: unknown) {
     }
 
     try {
-        const payment = await getPaymentByOrderId(parsed.data.orderId);
+        const payment = await withToolTimeout(() =>
+            withToolRetry(() => getPaymentByOrderId(parsed.data.orderId))
+        );
         if (!payment) {
             return toolError("NOT_FOUND", `No payment record found for order ${parsed.data.orderId}.`);
         }
         return payment;
-    } catch (err) {
+    } catch (err: any) {
+        if (err?.code === "TOOL_TIMEOUT") {
+            console.error("getPaymentByOrderId timed out");
+            return toolError("EXECUTION_ERROR", "Looking up this payment is taking longer than expected. Please try again shortly.");
+        }
         console.error("getPaymentByOrderId execution error:", err);
         return toolError("EXECUTION_ERROR", "Something went wrong looking up this payment. Please try again.");
     }

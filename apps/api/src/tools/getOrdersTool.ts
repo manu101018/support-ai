@@ -2,6 +2,7 @@ import { Type, FunctionDeclaration } from "@google/genai";
 import { getOrdersByUserId } from "../db/queries";
 import { GetOrdersArgsSchema } from "./schemas";
 import { toolError } from "./toolError";
+import { withToolRetry, withToolTimeout } from "./toolRetry";
 
 export const getOrdersToolDeclaration: FunctionDeclaration = {
     name: "getOrdersByUserId",
@@ -26,12 +27,18 @@ export async function executeGetOrdersTool(args: unknown) {
     }
 
     try {
-        const orders = await getOrdersByUserId(parsed.data.userId);
+        const orders = await withToolTimeout(() =>
+            withToolRetry(() => getOrdersByUserId(parsed.data.userId))
+        );
         if (orders.length === 0) {
             return { message: `No orders found for user ${parsed.data.userId}.`, orders: [] };
         }
         return { orders };
-    } catch (err) {
+    } catch (err: any) {
+        if (err?.code === "TOOL_TIMEOUT") {
+            console.error("getOrdersByUserId timed out");
+            return toolError("EXECUTION_ERROR", "Looking up this user's orders is taking longer than expected. Please try again shortly.");
+        }
         console.error("getOrdersByUserId execution error:", err);
         return toolError("EXECUTION_ERROR", "Something went wrong looking up orders. Please try again.");
     }

@@ -2,6 +2,7 @@ import { Type, FunctionDeclaration } from "@google/genai";
 import { getOrderById } from "../db/queries";
 import { GetOrderArgsSchema } from "./schemas";
 import { toolError } from "./toolError";
+import { withToolRetry, withToolTimeout } from "./toolRetry";
 
 // What the MODEL sees — name, description, and expected arguments
 export const getOrderToolDeclaration: FunctionDeclaration = {
@@ -28,12 +29,18 @@ export async function executeGetOrderTool(args: unknown) {
     }
 
     try {
-        const order = await getOrderById(parsed.data.orderId);
+        const order = await withToolTimeout(() =>
+            withToolRetry(() => getOrderById(parsed.data.orderId))
+        );
         if (!order) {
             return toolError("NOT_FOUND", `No order found with ID ${parsed.data.orderId}.`);
         }
         return order;
-    } catch (err) {
+    } catch (err: any) {
+        if (err?.code === "TOOL_TIMEOUT") {
+            console.error("getOrderById timed out");
+            return toolError("EXECUTION_ERROR", "Looking up this order is taking longer than expected. Please try again shortly.");
+        }
         console.error("getOrderById execution error:", err);
         return toolError("EXECUTION_ERROR", "Something went wrong looking up this order. Please try again.");
     }
