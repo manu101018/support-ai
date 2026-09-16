@@ -8,6 +8,12 @@ const llmProvider = createLLMProvider();
 
 const app = express();
 app.use(express.json());
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err.type === "entity.parse.failed") {
+        return res.status(400).json({ error: "Invalid JSON in request body." });
+    }
+    next(err);
+});
 
 app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
@@ -18,6 +24,10 @@ app.post("/chat", async (req, res) => {
 
     if (!message || typeof message != 'string') {
         return res.status(400).json({ error: "Field 'message' (string) is required." });
+    }
+
+    if (message.length > 2000) {
+        return res.status(400).json({ error: "Message too long (max 2000 characters)." });
     }
 
     try {
