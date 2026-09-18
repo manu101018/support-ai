@@ -12,7 +12,7 @@ async function ingest() {
     const { embedText } = await import("../src/rag/embedder");
 
     const files = listKnowledgeFiles();
-    console.log(`Found ${files.length} knowledge files:`, files);
+    // console.log(`Found ${files.length} knowledge files:`, files);
 
     for (const file of files) {
         const text = readKnowledgeFile(file);
@@ -31,7 +31,7 @@ async function ingest() {
         }
     }
 
-    console.log("Ingestion complete.");
+    // console.log("Ingestion complete.");
     await pool.end();
 }
 
