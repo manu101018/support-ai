@@ -9,7 +9,7 @@ async function ingest() {
     const { pool } = await import("../src/db/pool");
     const { listKnowledgeFiles, readKnowledgeFile } = await import("../src/rag/loader");
     const { chunkDocument } = await import("../src/rag/chunker");
-    const { embedText } = await import("../src/rag/embedder");
+    const { embedDocument } = await import("../src/rag/embedder");
 
     const files = listKnowledgeFiles();
     // console.log(`Found ${files.length} knowledge files:`, files);
@@ -20,7 +20,7 @@ async function ingest() {
         console.log(`  ${file}: ${chunks.length} chunks`);
 
         for (const chunk of chunks) {
-            const embedding = await embedText(chunk.content);
+            const embedding = await embedDocument(chunk.content);
             const vectorLiteral = `[${embedding.join(",")}]`;
 
             await pool.query(
