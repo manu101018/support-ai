@@ -9,8 +9,7 @@ export const SearchKnowledgeArgsSchema = z.object({
 
 export const searchKnowledgeToolDeclaration: FunctionDeclaration = {
     name: "searchKnowledgeBase",
-    description:
-        "Searches company policy documents (return, refund, shipping policies) for information relevant to the customer's question. Use this whenever the customer asks about policies, rules, timelines, or 'what happens if...' scenarios — do NOT answer policy questions from memory.",
+    description: `Searches company policy documents (return, refund, shipping policies) for information relevant to the customer's question. Use this for GENERAL policy questions — including 'what happens if payment was deducted but my order was never confirmed', return windows, refund timelines, and shipping coverage — even if the customer describes their own situation, as long as they haven't given a specific order ID to look up. Only use getOrderById/getPaymentByOrderId instead when the customer gives a specific order ID and wants that order's actual current status.`,
     parameters: {
         type: Type.OBJECT,
         properties: {
@@ -26,16 +25,19 @@ export const searchKnowledgeToolDeclaration: FunctionDeclaration = {
 export async function executeSearchKnowledgeTool(args: unknown) {
     const parsed = SearchKnowledgeArgsSchema.safeParse(args);
     if (!parsed.success) {
-        return toolError("INVALID_ARGUMENTS", `Invalid arguments for searchKnowledgeBase: ${parsed.error.message}`);
+        return {
+            message: "No sufficiently relevant policy information was found for this question. Do not guess — tell the customer you'll need to check and follow up, or ask a clarifying question.",
+            results: [],
+        };
     }
 
     try {
         const results = await searchKnowledge(parsed.data.query);
         if (results.length === 0) {
-            return toolError("NOT_FOUND", "No relevant policy information found.");
+            return toolError("NOT_FOUND", "No sufficiently relevant policy information was found for this question. Do not guess — tell the customer you'll need to check and follow up, or ask a clarifying question.");
         }
         return {
-            results: results.map((r) => ({ source: r.sourceFile, content: r.content })),
+            results: results.map((r) => ({ source: r.sourceFile, heading: r.heading, content: r.content })),
         };
     } catch (err) {
         console.error("searchKnowledgeBase execution error:", err);

@@ -22,11 +22,12 @@ async function ingest() {
         for (const chunk of chunks) {
             const embedding = await embedDocument(chunk.content);
             const vectorLiteral = `[${embedding.join(",")}]`;
+            const category = file.replace(".md", "");
 
             await pool.query(
-                `INSERT INTO knowledge_documents (source_file, chunk_index, content, embedding)
-         VALUES ($1, $2, $3, $4)`,
-                [file, chunk.index, chunk.content, vectorLiteral]
+                `INSERT INTO knowledge_documents (source_file, chunk_index, content, embedding, category, heading)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+                [file, chunk.index, chunk.content, vectorLiteral, category, chunk.heading]
             );
         }
     }
