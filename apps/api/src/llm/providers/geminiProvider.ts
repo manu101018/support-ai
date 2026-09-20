@@ -108,7 +108,7 @@ export class GeminiProvider implements LLMProvider {
             } else {
                 console.log(`[round ${round}] tool call: ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
                 toolResult = await tool.execute(functionCall.args);
-                console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
+                // console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
 
                 // Legitimate identity resolution — trust the derived value going forward
                 if (functionCall.name === "getCustomerByEmail" && toolResult?.id) {

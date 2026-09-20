@@ -2,6 +2,7 @@ import { Type, FunctionDeclaration } from "@google/genai";
 import { searchKnowledge } from "../rag/search";
 import { z } from "zod";
 import { toolError } from "./toolError";
+import { rewriteQuery } from "../rag/queryRewriter";
 
 export const SearchKnowledgeArgsSchema = z.object({
     query: z.string().min(3),
@@ -32,7 +33,13 @@ export async function executeSearchKnowledgeTool(args: unknown) {
     }
 
     try {
-        const results = await searchKnowledge(parsed.data.query);
+        const rewritten = await rewriteQuery(parsed.data.query);
+
+        if (rewritten !== parsed.data.query) {
+            console.log(`[query rewrite] "${parsed.data.query}" -> "${rewritten}"`);
+        };
+
+        const results = await searchKnowledge(rewritten);
         if (results.length === 0) {
             return toolError("NOT_FOUND", "No sufficiently relevant policy information was found for this question. Do not guess — tell the customer you'll need to check and follow up, or ask a clarifying question.");
         }
