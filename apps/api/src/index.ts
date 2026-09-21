@@ -37,7 +37,7 @@ app.post("/chat", async (req, res) => {
                 setTimeout(() => reject(new Error("LLM Call Timed Out. Please try again.")), parseInt(process.env.LLM_TIMEOUT_MS || "15000"));
             })
         ])
-        res.status(200).json({ message: reply });
+        res.status(200).json(reply);
     } catch (err) {
         console.error("LLM call failed:", err);
         res.status(502).json({ error: "AI service unavailable, please try again." });

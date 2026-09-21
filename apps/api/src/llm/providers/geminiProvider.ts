@@ -6,6 +6,7 @@ import { allToolDeclarations, toolRegistry } from "../../tools/registry";
 import { withRetry } from "../retry";
 import { createConversationContext, addTrustedValue, authorizeToolArgs } from "../../tools/authorization";
 import { toolError } from "../../tools/toolError";
+import { ChatResponse, ChatResponseSchema, geminiChatResponseSchema } from "../schemas/chatResponseSchema";
 
 export class GeminiProvider implements LLMProvider {
     name = "gemini";
@@ -56,7 +57,7 @@ export class GeminiProvider implements LLMProvider {
         return result.data;
     }
 
-    async chatWithTools(userMessage: string): Promise<string> {
+    async chatWithTools(userMessage: string): Promise<ChatResponse> {
         const contents: any[] = [
             { role: "user", parts: [{ text: userMessage }] },
         ];
@@ -82,12 +83,12 @@ export class GeminiProvider implements LLMProvider {
 
             // No tool requested — model is done, return its answer
             if (!functionCall) {
-                return response.text ?? "Sorry, I couldn't generate a response.";
+                return this.finalizeResponse(contents, response.text ?? "");
             }
 
             const tool = toolRegistry[functionCall.name!];
             if (!tool) {
-                return `I tried to use a tool ("${functionCall.name}") that isn't available.`;
+                return this.finalizeResponse(contents, `I tried to use a tool ("${functionCall.name}") that isn't available.`);
             }
 
             // Preserve the model's ACTUAL content (thought_signature intact)
@@ -106,7 +107,6 @@ export class GeminiProvider implements LLMProvider {
                 console.warn(`[round ${round}] BLOCKED unauthorized args:`, functionCall.args, authCheck.reason);
                 toolResult = toolError("UNAUTHORIZED_ARGUMENT", authCheck.reason!);
             } else {
-                console.log(`[round ${round}] tool call: ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
                 toolResult = await tool.execute(functionCall.args);
                 // console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
 
@@ -135,6 +135,42 @@ export class GeminiProvider implements LLMProvider {
             // loop continues — model gets another turn, may call another tool or finally answer
         }
 
-        return "I wasn't able to complete this request after several steps — could you rephrase or provide more details?";
+        return this.finalizeResponse(contents, "I wasn't able to complete this request after several steps — could you rephrase or provide more details?");
+    }
+
+    private async finalizeResponse(contents: any[], draftAnswer: string): Promise<ChatResponse> {
+        const finalizeContents = [
+            ...contents,
+            {
+                role: "user",
+                parts: [{
+                    text: `Based on the conversation so far, provide your final answer in the required JSON format. If you used searchKnowledgeBase results, list each one used in "citations" with its exact source and heading. If you didn't need to search policies (e.g. this was a pure order/payment lookup, or no tool was used), return an empty citations array. Draft answer for reference: ${draftAnswer}`,
+                }],
+            },
+        ];
+
+        const response = await withRetry(() =>
+            this.ai.models.generateContent({
+                model: this.model,
+                contents: finalizeContents,
+                config: {
+                    systemInstruction: SUPPORT_AI_SYSTEM_PROMPT,
+                    temperature: 0.2,
+                    responseMimeType: "application/json",
+                    responseSchema: geminiChatResponseSchema,
+                },
+            })
+        );
+
+        const rawText = response.text ?? '{"message":"Sorry, I couldn\'t generate a response.","citations":[]}';
+        const parsed = JSON.parse(rawText);
+        const result = ChatResponseSchema.safeParse(parsed);
+
+        if (!result.success) {
+            console.error("Final response failed schema validation:", result.error.message);
+            return { message: draftAnswer || "Sorry, I couldn't generate a response.", citations: [] };
+        }
+
+        return result.data;
     }
 }

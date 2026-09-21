@@ -5,6 +5,7 @@ import { IntentResult, IntentResultSchema } from "../schemas/intentSchema";
 import { ollamaIntentJsonSchema } from "../schemas/ollamaIntentSchema";
 import { toOllamaTools, stripThinkTags } from "./ollamaAdapters";
 import { toolRegistry } from "../../tools/registry";
+import { ChatResponse, ChatResponseSchema } from "../schemas/chatResponseSchema";
 
 export class OllamaProvider implements LLMProvider {
     name = "ollama";
@@ -58,7 +59,7 @@ export class OllamaProvider implements LLMProvider {
         return result.data;
     }
 
-    async chatWithTools(userMessage: string): Promise<string> {
+    async chatWithTools(userMessage: string): Promise<ChatResponse> {
         const messages: any[] = [
             { role: "system", content: SUPPORT_AI_SYSTEM_PROMPT },
             { role: "user", content: userMessage },
@@ -74,12 +75,12 @@ export class OllamaProvider implements LLMProvider {
         const toolCall = first.message.tool_calls?.[0];
 
         if (!toolCall) {
-            return stripThinkTags(first.message.content);
+            return this.finalizeResponse(messages, stripThinkTags(first.message.content));
         }
 
         const tool = toolRegistry[toolCall.function.name];
         if (!tool) {
-            return `I tried to use a tool ("${toolCall.function.name}") that isn't available.`;
+            return this.finalizeResponse(messages, `I tried to use a tool ("${toolCall.function.name}") that isn't available.`);
         }
 
         const args =
@@ -103,6 +104,35 @@ export class OllamaProvider implements LLMProvider {
             options: { temperature: 0.3 },
         });
 
-        return stripThinkTags(second.message.content);
+        return this.finalizeResponse(messages, stripThinkTags(second.message.content));
+    }
+
+    private async finalizeResponse(messages: any[], draftAnswer: string): Promise<ChatResponse> {
+        messages.push({
+            role: "user",
+            content: `Based on the conversation so far, provide your final answer in the required JSON format. If you used searchKnowledgeBase results, list each one used in "citations" with its exact source and heading. If you didn't need to search policies (e.g. this was a pure order/payment lookup, or no tool was used), return an empty citations array. Draft answer for reference: ${draftAnswer}`,
+        });
+
+        const response = await ollama.chat({
+            model: this.model,
+            messages,
+            options: { temperature: 0.2 },
+        });
+
+        const cleaned = stripThinkTags(response.message.content);
+
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(cleaned);
+        } catch {
+            throw new Error(`Ollama returned non-JSON output: ${cleaned}`);
+        }
+
+        const result = ChatResponseSchema.safeParse(parsed);
+        if (!result.success) {
+            throw new Error(`Model returned invalid structured output: ${result.error.message}`);
+        }
+
+        return result.data;
     }
 }

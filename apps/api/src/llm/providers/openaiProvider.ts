@@ -1,5 +1,6 @@
 import { LLMProvider, GenerateReplyOptions } from "../types";
 import { IntentResult } from "../schemas/intentSchema";
+import { ChatResponse } from "../schemas/chatResponseSchema";
 
 export class OpenAIProvider implements LLMProvider {
     name = "openai";
@@ -12,7 +13,7 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error("OpenAIProvider not implemented yet.");
     }
 
-    async chatWithTools(_userMessage: string): Promise<string> {
-        throw new Error("OpenAIProvider not implemented yet.");
+    async chatWithTools(_userMessage: string): Promise<ChatResponse> {
+        throw new Error("chatWithTools with structured citations not implemented for OpenAIProvider yet.");
     }
 }
