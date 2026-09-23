@@ -7,6 +7,7 @@ import { withRetry } from "../retry";
 import { createConversationContext, addTrustedValue, authorizeToolArgs } from "../../tools/authorization";
 import { toolError } from "../../tools/toolError";
 import { ChatResponse, ChatResponseSchema, geminiChatResponseSchema } from "../schemas/chatResponseSchema";
+import { createWorkflowState, updateWorkflowState, isPaidButStuck, WorkflowState } from "../../workflows/workflowState";
 
 export class GeminiProvider implements LLMProvider {
     name = "gemini";
@@ -64,6 +65,8 @@ export class GeminiProvider implements LLMProvider {
 
         const context = createConversationContext(userMessage);
 
+        const workflowState = createWorkflowState();
+
         const MAX_TOOL_ROUNDS = process.env.MAX_TOOL_ROUNDS ? parseInt(process.env.MAX_TOOL_ROUNDS) : 3; // safety cap — never loop forever
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -83,12 +86,12 @@ export class GeminiProvider implements LLMProvider {
 
             // No tool requested — model is done, return its answer
             if (!functionCall) {
-                return this.finalizeResponse(contents, response.text ?? "");
+                return this.finalizeResponse(contents, response.text ?? "", workflowState);
             }
 
             const tool = toolRegistry[functionCall.name!];
             if (!tool) {
-                return this.finalizeResponse(contents, `I tried to use a tool ("${functionCall.name}") that isn't available.`);
+                return this.finalizeResponse(contents, `I tried to use a tool ("${functionCall.name}") that isn't available.`, workflowState);
             }
 
             // Preserve the model's ACTUAL content (thought_signature intact)
@@ -119,6 +122,7 @@ export class GeminiProvider implements LLMProvider {
 
             console.log(`[round ${round}] tool call: ${functionCall.name}(${JSON.stringify(functionCall.args)})`);
             console.log(`[round ${round}] tool result:`, JSON.stringify(toolResult));
+            updateWorkflowState(workflowState, functionCall.name!, toolResult);
 
             contents.push({
                 role: "user",
@@ -135,16 +139,23 @@ export class GeminiProvider implements LLMProvider {
             // loop continues — model gets another turn, may call another tool or finally answer
         }
 
-        return this.finalizeResponse(contents, "I wasn't able to complete this request after several steps — could you rephrase or provide more details?");
+        return this.finalizeResponse(contents, "I wasn't able to complete this request after several steps — could you rephrase or provide more details?", workflowState);
     }
 
-    private async finalizeResponse(contents: any[], draftAnswer: string): Promise<ChatResponse> {
+    private async finalizeResponse(contents: any[], draftAnswer: string, state: WorkflowState): Promise<ChatResponse> {
+        console.log("[workflow state]", JSON.stringify(state));
+
+        let extraGuidance = "";
+        if (isPaidButStuck(state)) {
+            extraGuidance = " NOTE: payment succeeded but the order status suggests it may be stuck — if you haven't already, consider offering escalation to a human agent for this specific case.";
+        }
+
         const finalizeContents = [
             ...contents,
             {
                 role: "user",
                 parts: [{
-                    text: `Based on the conversation so far, provide your final answer in the required JSON format. If you used searchKnowledgeBase results, list each one used in "citations" with its exact source and heading. If you didn't need to search policies (e.g. this was a pure order/payment lookup, or no tool was used), return an empty citations array. Draft answer for reference: ${draftAnswer}`,
+                    text: `Based on the conversation so far, provide your final answer in the required JSON format. If you used searchKnowledgeBase results, list each one used in "citations" with its exact source and heading. If you didn't need to search policies, return an empty citations array. Draft answer for reference: ${draftAnswer}${extraGuidance}`,
                 }],
             },
         ];
