@@ -1,4 +1,7 @@
+import { ScenarioResult } from "../llm/schemas/scenarioSchema";
+
 export interface WorkflowState {
+    scenario: ScenarioResult["scenario"];
     orderChecked: boolean;
     paymentChecked: boolean;
     policyChecked: boolean;
@@ -7,8 +10,9 @@ export interface WorkflowState {
     toolCallSequence: string[];
 }
 
-export function createWorkflowState(): WorkflowState {
+export function createWorkflowState(scenario: ScenarioResult["scenario"]): WorkflowState {
     return {
+        scenario,
         orderChecked: false,
         paymentChecked: false,
         policyChecked: false,
@@ -49,13 +53,34 @@ export function updateWorkflowState(
 }
 
 /**
- * Detects the specific "paid but not shipped" pattern from accumulated state —
- * used to decide whether this looks like something worth flagging/escalating.
+ * Scenario-specific guidance, looked up by classified scenario rather than
+ * hardcoded to one case. Each entry checks whether ITS relevant state
+ * conditions are met before returning guidance — deliberately still simple
+ * per-scenario functions, not a generic rule engine. Add a new scenario by
+ * adding a new case here, nothing else needs to change.
  */
-export function isPaidButStuck(state: WorkflowState): boolean {
-    return (
-        state.paymentStatus === "success" &&
-        state.orderStatus !== null &&
-        ["placed", "processing"].includes(state.orderStatus)
-    );
+
+export function getScenarioGuidance(state: WorkflowState): string {
+    switch (state.scenario) {
+        case "payment_stuck_shipping":
+            if (state.paymentStatus === "success" && ["placed", "processing"].includes(state.orderStatus ?? "")) {
+                return " NOTE: payment succeeded but the order status suggests it may be stuck — consider offering escalation to a human agent.";
+            }
+            return "";
+
+        case "payment_failed_confused":
+            if (state.paymentStatus === "failed") {
+                return " NOTE: payment genuinely failed. Reassure the customer no charge should be pending, and mention they can retry the order.";
+            }
+            return "";
+
+        case "policy_question":
+            if (!state.policyChecked) {
+                return " NOTE: this looks like a general policy question — make sure searchKnowledgeBase was actually used before answering, rather than answering from general knowledge.";
+            }
+            return "";
+
+        default:
+            return "";
+    }
 }

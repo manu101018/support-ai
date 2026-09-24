@@ -7,7 +7,8 @@ import { withRetry } from "../retry";
 import { createConversationContext, addTrustedValue, authorizeToolArgs } from "../../tools/authorization";
 import { toolError } from "../../tools/toolError";
 import { ChatResponse, ChatResponseSchema, geminiChatResponseSchema } from "../schemas/chatResponseSchema";
-import { createWorkflowState, updateWorkflowState, isPaidButStuck, WorkflowState } from "../../workflows/workflowState";
+import { createWorkflowState, updateWorkflowState, getScenarioGuidance, WorkflowState } from "../../workflows/workflowState";
+import { classifyScenario } from "../../workflows/scenarioClassifier";
 
 export class GeminiProvider implements LLMProvider {
     name = "gemini";
@@ -59,13 +60,16 @@ export class GeminiProvider implements LLMProvider {
     }
 
     async chatWithTools(userMessage: string): Promise<ChatResponse> {
+        const scenarioResult = await classifyScenario(userMessage);
+        console.log(`[scenario] ${scenarioResult.scenario} — ${scenarioResult.reasoning}`);
+
         const contents: any[] = [
             { role: "user", parts: [{ text: userMessage }] },
         ];
 
         const context = createConversationContext(userMessage);
 
-        const workflowState = createWorkflowState();
+        const workflowState = createWorkflowState(scenarioResult.scenario);
 
         const MAX_TOOL_ROUNDS = process.env.MAX_TOOL_ROUNDS ? parseInt(process.env.MAX_TOOL_ROUNDS) : 3; // safety cap — never loop forever
 
@@ -145,10 +149,7 @@ export class GeminiProvider implements LLMProvider {
     private async finalizeResponse(contents: any[], draftAnswer: string, state: WorkflowState): Promise<ChatResponse> {
         console.log("[workflow state]", JSON.stringify(state));
 
-        let extraGuidance = "";
-        if (isPaidButStuck(state)) {
-            extraGuidance = " NOTE: payment succeeded but the order status suggests it may be stuck — if you haven't already, consider offering escalation to a human agent for this specific case.";
-        }
+        const extraGuidance = getScenarioGuidance(state);
 
         const finalizeContents = [
             ...contents,
